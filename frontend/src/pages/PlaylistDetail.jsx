@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import TrackCard from '../components/music/TrackCard';
 import { TrackSkeletonRow } from '../components/music/SkeletonLoader';

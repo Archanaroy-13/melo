@@ -28,6 +28,15 @@ export function AudioProvider({ children }) {
   const unplayableTracksRef = useRef(new Set());
   // Prevent infinite retry loops on stream error
   const isRetryingRef = useRef(false);
+  // Active play promise ref to prevent race conditions on rapid track switches
+  const playPromiseRef = useRef(null);
+  // Client-side history recording ref to prevent duplicate history POST requests
+  const hasRecordedHistoryRef = useRef(false);
+
+  // Reset history tracking state whenever a new track is loaded
+  useEffect(() => {
+    hasRecordedHistoryRef.current = false;
+  }, [currentTrack?.id]);
 
   // Synchronize audio element volume & mute
   useEffect(() => {
@@ -59,7 +68,6 @@ export function AudioProvider({ children }) {
 
     if (unplayableTracksRef.current.has(track.id)) {
       showToast(`Audio unavailable for "${track.title}"`, 'error');
-      // Advance to next playable item in queue if available
       return;
     }
 
@@ -82,18 +90,25 @@ export function AudioProvider({ children }) {
       audioRef.current.src = audioUrl;
       audioRef.current.load();
       const playPromise = audioRef.current.play();
+      playPromiseRef.current = playPromise;
 
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            setIsPlaying(true);
-            isRetryingRef.current = false;
-            updateMediaSession(track);
-            if ('mediaSession' in navigator) {
-              navigator.mediaSession.playbackState = 'playing';
+            if (playPromiseRef.current === playPromise) {
+              setIsPlaying(true);
+              isRetryingRef.current = false;
+              updateMediaSession(track);
+              if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+              }
             }
           })
           .catch((err) => {
+            // Ignore AbortError caused by rapid track changes or new load requests
+            if (err.name === 'AbortError') {
+              return;
+            }
             console.error('[Audio Playback Error]:', err);
             if (!isRetry) {
               // Attempt single-refresh URL retry
@@ -119,8 +134,28 @@ export function AudioProvider({ children }) {
     const audio = audioRef.current;
 
     const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime || 0);
-      setDuration(audio.duration || 0);
+      const time = audio.currentTime || 0;
+      const dur = audio.duration || 0;
+      setCurrentTime(time);
+      setDuration(dur);
+
+      // Record listening history once when threshold is reached (30s OR 25% duration)
+      if (currentTrack && !hasRecordedHistoryRef.current && dur > 0) {
+        const threshold = Math.min(30, dur * 0.25);
+        if (time >= threshold && time > 0) {
+          hasRecordedHistoryRef.current = true;
+          axios.post('/api/history', {
+            id: currentTrack.id,
+            trackId: currentTrack.id,
+            source: currentTrack.source || 'sayamusic',
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            album: currentTrack.album,
+            artwork: currentTrack.artwork,
+            duration: currentTrack.duration
+          }).catch(() => {});
+        }
+      }
     };
 
     const handleEnded = () => {

@@ -3,7 +3,13 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { getDBStatus } = require('../config/db');
 
-const JWT_SECRET = process.env.SESSION_SECRET || 'melo_private_secret_key_change_in_production_2026';
+const getJwtSecret = () => {
+  if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+    console.error('[FATAL ERROR]: SESSION_SECRET environment variable is missing in production mode!');
+    throw new Error('SESSION_SECRET must be explicitly defined in production mode.');
+  }
+  return process.env.SESSION_SECRET || 'melo_private_secret_key_change_in_production_2026';
+};
 
 const setAuthCookie = (res, token) => {
   res.cookie('token', token, {
@@ -47,7 +53,7 @@ const setup = async (req, res) => {
       passwordHash
     });
 
-    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id, username: user.username }, getJwtSecret(), { expiresIn: '7d' });
     setAuthCookie(res, token);
 
     return res.status(201).json({
@@ -84,7 +90,7 @@ const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
-    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id, username: user.username }, getJwtSecret(), { expiresIn: '7d' });
     setAuthCookie(res, token);
 
     return res.json({
@@ -126,7 +132,7 @@ const me = async (req, res) => {
       return res.json({ setupRequired: false, authenticated: false });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     const user = await User.findById(decoded.id).select('-passwordHash');
     if (!user) {
       return res.json({ setupRequired: false, authenticated: false });

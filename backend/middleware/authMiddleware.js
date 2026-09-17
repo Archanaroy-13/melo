@@ -16,6 +16,10 @@ const authMiddleware = (req, res, next) => {
   }
 
   try {
+    if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+      console.error('[FATAL ERROR]: SESSION_SECRET environment variable is missing in production mode!');
+      throw new Error('SESSION_SECRET must be explicitly defined in production mode.');
+    }
     const secret = process.env.SESSION_SECRET || 'melo_private_secret_key_change_in_production_2026';
     const decoded = jwt.verify(token, secret);
     req.user = decoded;
